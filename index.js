@@ -3,6 +3,7 @@ const { MongoClient, ServerApiVersion } = require('mongodb');
 const ObjectId = require('mongodb').ObjectId;
 const admin = require("firebase-admin");
 const cors = require('cors');
+const { auth } = require('firebase-admin');
 require('dotenv').config();
 
 const app = express();
@@ -65,6 +66,52 @@ async function run() {
                 const user = req.body;
                 const result = await users.insertOne(user);
                 res.json(result);
+            }
+        });
+
+        //storing the users to database and firebase [brand new users] from dashboard
+        app.post('/users/addAnotherUser', verifyToken, async (req, res) => {
+            const requester = req.decodedEmail;
+            if (requester) {
+                const requesterAccount = await users.findOne({ email: requester });
+                if (requesterAccount.role === 'admin') {
+                    const email = req.body.email;
+                    const query = { email: email };
+                    const existingUser = await users.findOne(query);
+                    if (existingUser) {
+                        res.json({ message: 'This User is already registerd' })
+                    }
+                    else {
+                        admin.auth().createUser({
+                            email: req.body.email,
+                            password: req.body.password,
+                            displayName: req.body.name,
+                        })
+                            .then((userRecord) => {
+                                // See the UserRecord reference doc for the contents of userRecord.
+                                console.log('Successfully created new user:', userRecord.uid);
+                            })
+                            .catch((error) => {
+                                console.log('Error creating new user:', error);
+                            })
+                        const user = {
+                            email: req.body.email,
+                            username: req.body.username,
+                            name: req.body.name,
+                            age: req.body.age,
+                            gender: req.body.gender,
+                            country: req.body.country,
+                            device: req.body.device,
+                        }
+                        const result = await users.insertOne(user);
+                        res.json(result);
+                    }
+
+
+                }
+                else {
+                    res.status(403).json({ message: 'You do not have access to add another user' })
+                }
             }
         });
 

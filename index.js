@@ -54,6 +54,91 @@ async function run() {
         const database = client.db("tier5_dashboard_DB");
         const users = database.collection("users");
 
+        //can be updated both specific Users every infos and also can be updated only username (unique username)
+        app.put('/users/update/:id', async (req, res) => {
+            const userInfo = req.body;
+            console.log(userInfo);
+            const editedUsername = userInfo.username;
+            const queryOfUsername = { username: editedUsername };
+            const existingUsernameOfUser = await users.findOne(queryOfUsername);
+            if (existingUsernameOfUser.email !== userInfo.email) {
+                res.json({ message: 'This username is already taken' })
+            }
+            else {
+                const id = req.params.id;
+                const filter = { _id: ObjectId(id) };
+                const options = { upsert: true };
+                const updateDoc = {
+                    $set: {
+                        email: userInfo.email,
+                        username: userInfo.username,
+                        name: userInfo.name,
+                        age: userInfo.age,
+                        gender: userInfo.gender,
+                        country: userInfo.country,
+                        device: userInfo.device,
+                    }
+                };
+                const result = await users.updateOne(filter, updateDoc, options);
+                res.json(result);
+            }
+        })
+
+        //DELETE users from database
+        app.delete("/users/delete/:id", async (req, res) => {
+            const userId = req.params.id;
+            const query = { _id: ObjectId(userId) };
+            const specificUser = await users.findOne(query);
+            admin.auth().getUserByEmail(specificUser?.email)
+                .then((userRecord) => {
+                    // See the UserRecord reference doc for the contents of userRecord.
+                    // console.log(`Successfully fetched user data: ${JSON.stringify(userRecord)}`);
+                    var stringifyUser = JSON.stringify(userRecord);
+                    var currentFirebaseUser = JSON.parse(stringifyUser);
+                    admin.auth().deleteUser(currentFirebaseUser?.uid)
+                        .then(() => {
+                            console.log('Successfully deleted user');
+                        })
+                        .catch((error) => {
+                            console.log('Error deleting user:', error);
+                        });
+                })
+                .catch((error) => {
+                    console.log('Error fetching user data:', error);
+                });
+            const result = await users.deleteOne(query);
+            res.json(result);
+        });
+
+        //checking the admin
+        app.get('/users/checkAdmin/:email', async (req, res) => {
+            const email = req.params.email;
+            const query = { email: email };
+            const user = await users.findOne(query);
+            let isAdmin = false
+            if (user?.role === 'admin') {
+                isAdmin = true;
+            }
+            res.json({ admin: isAdmin });
+        });
+
+        //load specific user info by id from users collection for updatation
+        app.get('/users/:id', async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: ObjectId(id) };
+            const specificUser = await users.findOne(query);
+            res.send(specificUser);
+        });
+
+
+        //show all users to dashboard from database by server
+        app.get('/users', async (req, res) => {
+            const cursor = users.find({});
+            let allUsers = await cursor.toArray();
+            allUsers = allUsers.filter(user => !user.role);
+            res.json(allUsers);
+        });
+
         //storing the users to database [brand new users]
         app.post('/users', async (req, res) => {
             const email = req.body.email;
@@ -84,8 +169,10 @@ async function run() {
                     else {
                         admin.auth().createUser({
                             email: req.body.email,
+                            emailVerified: false,
                             password: req.body.password,
                             displayName: req.body.name,
+                            disabled: false,
                         })
                             .then((userRecord) => {
                                 // See the UserRecord reference doc for the contents of userRecord.
@@ -106,8 +193,6 @@ async function run() {
                         const result = await users.insertOne(user);
                         res.json(result);
                     }
-
-
                 }
                 else {
                     res.status(403).json({ message: 'You do not have access to add another user' })
@@ -140,17 +225,6 @@ async function run() {
 
         });
 
-        //checking the admin
-        app.get('/users/:email', async (req, res) => {
-            const email = req.params.email;
-            const query = { email: email };
-            const user = await users.findOne(query);
-            let isAdmin = false
-            if (user?.role === 'admin') {
-                isAdmin = true;
-            }
-            res.json({ admin: isAdmin });
-        });
 
     } finally {
         // await client.close();
